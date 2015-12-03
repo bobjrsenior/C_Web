@@ -22,10 +22,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <string.h>
 
 /* ===  Globals  ===================================================================== */
-
-
+int port = 51717; //51717 instead of 80 is for testing
+char* wwwRoot;
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -42,9 +43,38 @@ void becomeDaemon (const char* pName);
  * =====================================================================================
  */
 int main ( int argc, char *argv[] ){
-	becomeDaemon(argv[0]);
-	sleep(10);
-	printf("I am daemon\n");
+	int isDaemon = 0;
+
+	//Cycle through passed command options
+	int e;
+	for(e = 1; e < argc; ++e){
+		//'-d' is to make the program a daemon
+		if(strcmp(argv[e], "-d") == 0){
+			isDaemon = 1;
+		}//'-p' s to specify a port
+		else if(strcmp(argv[e], "-p") == 0){
+			port = atoi(argv[++e]);
+		}//'-r' is to set the www root directory
+		else if(strcmp(argv[e], "-r") == 0){
+			wwwRoot = argv[++e];		
+		}//'-help' shows all available commands
+		else if(strcmp(argv[e], "-help") == 0){
+			printf("Command Options\n" \
+				"Use '-d' to run as a daemon\n" \
+				"Use '-p <number>' to specifiy a port\n" \
+				"Use 'r <dir>' to specify to www root directory\n" \
+				"Use '-help' to see this output\n");			
+			return EXIT_SUCCESS;
+		}//If invalid command
+		else{
+			printf("Invalid command '%s' specified\n" \
+				"Use command '-help' to see available options\n", argv[e]);
+			return EXIT_FAILURE;
+		}
+	}
+	if(isDaemon){
+		becomeDaemon(argv[0]);
+	}
 	return EXIT_SUCCESS;
 }/* ----------  end of function main  ---------- */
 
@@ -70,7 +100,7 @@ void becomeDaemon (const char* pName){
 		exit(EXIT_FAILURE);
 	}
 	else if(childPid){
-		printf("%s\n", pName);
+		printf("Process Name: %s\nProcess ID: %d\n", pName, getpid());
 		exit(EXIT_SUCCESS);
 	}
 
