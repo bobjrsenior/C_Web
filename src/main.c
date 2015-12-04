@@ -25,6 +25,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <signal.h>
 
 /* ===  Globals  ===================================================================== */
 int port = 51717; //51717 instead of 80 is for testing
@@ -69,6 +70,16 @@ void startServer ();
 void closeServer ();
 
 
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  handleRequest
+ *  Description: Handles an http request 
+ * =====================================================================================
+ */
+void handleRequest ( int rsockfd );
+
+
 /* 
  * ===  FUNCTION  ======================================================================
  *         Name:  main
@@ -109,6 +120,7 @@ int main ( int argc, char *argv[] ){
 			return EXIT_FAILURE;
 		}
 	}
+	signal(SIGCHLD, SIG_IGN);
 	if(isDaemon){
 		becomeDaemon(argv[0]);
 	}
@@ -209,28 +221,68 @@ void closeServer (){
 void startServer (){
 	int newsockfd;
 	socklen_t clilen;
-	char buffer[1024];
-	int bytes;
+	pid_t childPid;
 	while(1){
 		clilen = sizeof(cli_addr);
 		newsockfd = accept(sockfd, (struct sockaddr*) &cli_addr, &clilen);
 		if(newsockfd < 0){
 			perror("Failed to accept client");
 		}
-		bzero(buffer, 1024);
-		if((bytes = read(newsockfd, buffer, 1023)) < 0){
-			perror("Error reading from socket");
-			close(newsockfd);
-			closeServer();
-			exit(EXIT_FAILURE);
+		childPid = fork();
+		if(childPid < 0){
+			perror("Failed to fork process to handle request");
+			continue;
 		}
-		printf("%s\n", buffer);
-		if((bytes = write(newsockfd, "Recieved message", 17)) < 0){
-			perror("Error writing to socket");
+		else if(childPid == 0){	
+			handleRequest(newsockfd);	
 			close(newsockfd);
-			closeServer();
-			exit(EXIT_FAILURE);
+			exit(EXIT_SUCCESS);
 		}
 		close(newsockfd);
+	}
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  handleRequest
+ *  Description: Handles an http request 
+ * =====================================================================================
+ */
+void handleRequest ( int rsockfd ){	
+	char buffer[1024];
+	char typeBuffer[10];
+	int bytes;
+
+	//Read in the request
+	bzero(buffer, 1024);
+	if((bytes = read(rsockfd, buffer, 1023)) < 0){
+		perror("Error reading from socket");
+		close(rsockfd);
+		exit(EXIT_FAILURE);
+	}
+	//Output it for debugging
+	printf("%s\n", buffer);
+	
+	//Find the request type (GET, POST, ect)
+	if((bytes = sscanf(buffer, "%9s ", typeBuffer)) < 0){
+		perror("Failed to find request type");
+		close(rsockfd);
+		exit(EXIT_FAILURE);
+	}
+	else if(strcmp(typeBuffer, "GET") == 0){
+		
+	}
+	else{
+		perror("Unknown request type");
+		close(rsockfd);
+		exit(EXIT_FAILURE);
+	}
+	printf("%s\n", typeBuffer);
+	
+	if((bytes = write(rsockfd, "Recieved message", 17)) < 0){
+		perror("Error writing to socket");
+		close(rsockfd);
+		exit(EXIT_FAILURE);
 	}
 }
