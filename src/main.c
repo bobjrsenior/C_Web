@@ -26,7 +26,7 @@
 
 /* ===  Globals  ===================================================================== */
 int port = 51717; //51717 instead of 80 is for testing
-char* wwwRoot;
+char* wwwRoot = NULL;
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -53,10 +53,14 @@ int main ( int argc, char *argv[] ){
 			isDaemon = 1;
 		}//'-p' s to specify a port
 		else if(strcmp(argv[e], "-p") == 0){
-			port = atoi(argv[++e]);
+			if(++e < argc){
+				port = atoi(argv[e]);
+			}
 		}//'-r' is to set the www root directory
 		else if(strcmp(argv[e], "-r") == 0){
-			wwwRoot = argv[++e];		
+			if(++e < argc){
+				wwwRoot = argv[e];
+			}		
 		}//'-help' shows all available commands
 		else if(strcmp(argv[e], "-help") == 0){
 			printf("Command Options\n" \
@@ -75,6 +79,19 @@ int main ( int argc, char *argv[] ){
 	if(isDaemon){
 		becomeDaemon(argv[0]);
 	}
+
+	//Change roo directory
+	if(wwwRoot == NULL){
+		if(chdir("/var/www/") < 0){
+			perror("Failed to change to root directory");
+		}
+	}
+	else{
+		if(chdir(wwwRoot) < 0){
+			perror("Failed to change to root directory");
+		}
+	}
+	printf("Success\n");
 	return EXIT_SUCCESS;
 }/* ----------  end of function main  ---------- */
 
@@ -109,10 +126,5 @@ void becomeDaemon (const char* pName){
 		perror("Failed to make a new session for daemon");
 	} 
 
-	//Change roo directory
-	////TODO: Make into wwwroot
-	if(chdir("/") < 0){
-		perror("Failed to change to root directory");
-	}
 }	
 	
