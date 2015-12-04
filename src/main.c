@@ -23,10 +23,16 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 /* ===  Globals  ===================================================================== */
 int port = 51717; //51717 instead of 80 is for testing
 char* wwwRoot = NULL;
+int sockfd, newsockfd;
+socklen_t clilen;
+struct sockaddr_in serv_addr, cli_addr;
+
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -35,6 +41,25 @@ char* wwwRoot = NULL;
  * =====================================================================================
  */
 void becomeDaemon (const char* pName);
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  initServer
+ *  Description: Initializes the server 
+ * =====================================================================================
+ */
+void initServer ();
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  closeServer
+ *  Description: Closes the server 
+ * =====================================================================================
+ */
+void closeServer ();
+
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -91,6 +116,8 @@ int main ( int argc, char *argv[] ){
 			perror("Failed to change to root directory");
 		}
 	}
+	initServer();
+	closeServer();
 	printf("Success\n");
 	return EXIT_SUCCESS;
 }/* ----------  end of function main  ---------- */
@@ -127,4 +154,36 @@ void becomeDaemon (const char* pName){
 	} 
 
 }	
-	
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  initServer
+ *  Description: Initializes the server 
+ * =====================================================================================
+ */
+void initServer (){
+	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+		perror("Failed to open socket");
+		exit(EXIT_FAILURE);
+	}
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
+	serv_addr.sin_port = htons(port);
+	if((bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr))) < 0){
+		perror("Failed to bind port");
+		exit(EXIT_FAILURE);
+	}
+	listen(sockfd, 5);
+}
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  closeServer
+ *  Description: Closes the server 
+ * =====================================================================================
+ */
+void closeServer (){
+	close(sockfd);
+}
