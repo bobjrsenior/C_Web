@@ -29,8 +29,7 @@
 /* ===  Globals  ===================================================================== */
 int port = 51717; //51717 instead of 80 is for testing
 char* wwwRoot = NULL;
-int sockfd, newsockfd;
-socklen_t clilen;
+int sockfd;
 struct sockaddr_in serv_addr, cli_addr;
 
 
@@ -40,7 +39,7 @@ struct sockaddr_in serv_addr, cli_addr;
  *  Description: Makes the program into a daemon 
  * =====================================================================================
  */
-void becomeDaemon (const char* pName);
+void becomeDaemon ();
 
 
 /* 
@@ -49,7 +48,16 @@ void becomeDaemon (const char* pName);
  *  Description: Initializes the server 
  * =====================================================================================
  */
-void initServer ();
+void initServer (const char* pName);
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  startServer
+ *  Description: Begins accepting new clients 
+ * =====================================================================================
+ */
+void startServer ();
 
 
 /* 
@@ -116,7 +124,8 @@ int main ( int argc, char *argv[] ){
 			perror("Failed to change to root directory");
 		}
 	}
-	initServer();
+	initServer(argv[0]);
+	startServer();
 	closeServer();
 	printf("Success\n");
 	return EXIT_SUCCESS;
@@ -129,7 +138,7 @@ int main ( int argc, char *argv[] ){
  *  Description: Makes the program into a daemon 
  * =====================================================================================
  */
-void becomeDaemon (const char* pName){
+void becomeDaemon (){
 	pid_t childPid, sid;
 
 	//You are already a daemon
@@ -144,7 +153,6 @@ void becomeDaemon (const char* pName){
 		exit(EXIT_FAILURE);
 	}
 	else if(childPid){
-		printf("Process Name: %s\nProcess ID: %d\n", pName, getpid());
 		exit(EXIT_SUCCESS);
 	}
 
@@ -162,7 +170,7 @@ void becomeDaemon (const char* pName){
  *  Description: Initializes the server 
  * =====================================================================================
  */
-void initServer (){
+void initServer (const char* pName){
 	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
 		perror("Failed to open socket");
 		exit(EXIT_FAILURE);
@@ -176,7 +184,10 @@ void initServer (){
 		exit(EXIT_FAILURE);
 	}
 	listen(sockfd, 5);
+	printf("\nListening on port: %d\n" \
+		"Daemon Process Name: %s\n", port, pName);
 }
+
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -186,4 +197,40 @@ void initServer (){
  */
 void closeServer (){
 	close(sockfd);
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  startServer
+ *  Description: Begins accepting new clients 
+ * =====================================================================================
+ */
+void startServer (){
+	int newsockfd;
+	socklen_t clilen;
+	char buffer[1024];
+	int bytes;
+	while(1){
+		clilen = sizeof(cli_addr);
+		newsockfd = accept(sockfd, (struct sockaddr*) &cli_addr, &clilen);
+		if(newsockfd < 0){
+			perror("Failed to accept client");
+		}
+		bzero(buffer, 1024);
+		if((bytes = read(newsockfd, buffer, 1023)) < 0){
+			perror("Error reading from socket");
+			close(newsockfd);
+			closeServer();
+			exit(EXIT_FAILURE);
+		}
+		printf("%s\n", buffer);
+		if((bytes = write(newsockfd, "Recieved message", 17)) < 0){
+			perror("Error writing to socket");
+			close(newsockfd);
+			closeServer();
+			exit(EXIT_FAILURE);
+		}
+		close(newsockfd);
+	}
 }
