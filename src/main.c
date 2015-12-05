@@ -127,7 +127,10 @@ int main ( int argc, char *argv[] ){
 
 	//Change roo directory
 	if(wwwRoot == NULL){
-		if(chdir("/var/www/") < 0){
+		wwwRoot = (char*)malloc(sizeof(char) * 9);
+		strcpy(wwwRoot, "/var/www");
+		printf("%s\n", wwwRoot);
+		if(chdir(wwwRoot) < 0){
 			perror("Failed to change to root directory");
 		}
 	}
@@ -252,7 +255,11 @@ void startServer (){
 void handleRequest ( int rsockfd ){	
 	char buffer[1024];
 	char typeBuffer[10];
+	char pathBuffer[128];
 	int bytes;
+	int position = 0;
+	FILE* fptr;
+	int fileSize;
 
 	//Read in the request
 	bzero(buffer, 1024);
@@ -271,7 +278,33 @@ void handleRequest ( int rsockfd ){
 		exit(EXIT_FAILURE);
 	}
 	else if(strcmp(typeBuffer, "GET") == 0){
-		
+		position += bytes + 2;
+		if((bytes = sscanf(&buffer[position], "%127s", pathBuffer)) < 0){
+			perror("Failed to read file path");
+			close(rsockfd);
+			exit(EXIT_FAILURE);
+		}
+		position += bytes + 2;
+		//Find the file is it exists and send it back
+		//Need to include correct headers/errors ect
+		char* fullPath = strcat(wwwRoot, pathBuffer);
+		printf("%s\n", fullPath);
+		if((fptr = fopen(fullPath, "r")) == NULL){
+			perror("Error opening file");
+			close(rsockfd);
+			free(fullPath);
+			exit(EXIT_FAILURE);
+		}
+		if(fseek(fptr, 0, SEEK_END) < 0 || (fileSize = ftell(fptr)) < 0 || fseek(fptr, 0, SEEK_SET) < 0){
+			perror("Error Determining file size");
+			free(fullPath);
+			fclose(fptr);
+			close(rsockfd);
+			exit(EXIT_FAILURE);
+		}
+		printf("File Size: %d\n", fileSize);
+		free(fullPath);
+		fclose(fptr);
 	}
 	else{
 		perror("Unknown request type");
