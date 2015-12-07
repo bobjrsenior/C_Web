@@ -82,6 +82,24 @@ void handleRequest ( int rsockfd );
 
 /* 
  * ===  FUNCTION  ======================================================================
+ *         Name:  makeReturnHeader
+ *  Description: Creates the html headers to be returned 
+ * =====================================================================================
+ */
+char* makeReturnHeader (const char* status, const char* version, int bytes );
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  sendFile
+ *  Description: Sends a file to the client 
+ * =====================================================================================
+ */
+int sendFile ( FILE* fptr, int sockfd );
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
  *         Name:  main
  *  Description:  Initializes the program
  * =====================================================================================
@@ -256,6 +274,8 @@ void handleRequest ( int rsockfd ){
 	char buffer[1024];
 	char typeBuffer[10];
 	char pathBuffer[128];
+	char htmlVersionBuffer[10];
+	char* htmlHeader;
 	int bytes;
 	int position = 0;
 	FILE* fptr;
@@ -268,27 +288,29 @@ void handleRequest ( int rsockfd ){
 		close(rsockfd);
 		exit(EXIT_FAILURE);
 	}
-	//Output it for debugging
-	printf("%s\n", buffer);
-	
+
 	//Find the request type (GET, POST, ect)
-	if((bytes = sscanf(buffer, "%9s ", typeBuffer)) < 0){
+	if((bytes = sscanf(buffer, "%9s ", typeBuffer)) != 1){
 		perror("Failed to find request type");
 		close(rsockfd);
 		exit(EXIT_FAILURE);
 	}
 	else if(strcmp(typeBuffer, "GET") == 0){
-		position += bytes + 2;
-		if((bytes = sscanf(&buffer[position], "%127s", pathBuffer)) < 0){
+		position += strlen(typeBuffer) + 1;
+		if((bytes = sscanf(&buffer[position], "%127s", pathBuffer)) != 1){
 			perror("Failed to read file path");
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
-		position += bytes + 2;
-		//Find the file is it exists and send it back
-		//Need to include correct headers/errors ect
-		char* fullPath = strcat(wwwRoot, pathBuffer);
-		printf("%s\n", fullPath);
+		position += strlen(pathBuffer) + 1;
+		char* fullPath = (char*)malloc(sizeof(char) * 250);
+		if(fullPath == NULL){
+			perror("Error allocating space");
+			close(rsockfd);
+			exit(EXIT_FAILURE);
+		}
+		memcpy(fullPath, wwwRoot, strlen(wwwRoot));
+		memcpy(&fullPath[strlen(wwwRoot)], &pathBuffer, sizeof(pathBuffer));
 		if((fptr = fopen(fullPath, "r")) == NULL){
 			perror("Error opening file");
 			close(rsockfd);
@@ -302,7 +324,32 @@ void handleRequest ( int rsockfd ){
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
-		printf("File Size: %d\n", fileSize);
+		if((bytes = sscanf(&buffer[position], "%9s", htmlVersionBuffer)) != 1){
+			perror("Error getting html version");
+			free(fullPath);
+			fclose(fptr);
+			close(rsockfd);
+			exit(EXIT_FAILURE);
+		}
+		position += strlen(htmlVersionBuffer) + 1;
+		htmlHeader = makeReturnHeader("200 OK", htmlVersionBuffer, fileSize);
+		if(htmlHeader == NULL){
+			perror("Error creating return headers");
+			free(fullPath);
+			fclose(fptr);
+			close(rsockfd);
+			exit(EXIT_FAILURE);
+		}
+		write(rsockfd, htmlHeader, strlen(htmlHeader));
+		if(sendFile(fptr, rsockfd) < 0){
+			perror("Error sending file");
+			free(htmlHeader);
+			free(fullPath);
+			fclose(fptr);
+			close(rsockfd);
+			exit(EXIT_FAILURE);
+		}
+		free(htmlHeader);
 		free(fullPath);
 		fclose(fptr);
 	}
@@ -311,11 +358,53 @@ void handleRequest ( int rsockfd ){
 		close(rsockfd);
 		exit(EXIT_FAILURE);
 	}
-	printf("%s\n", typeBuffer);
+	/*printf("%s\n", typeBuffer);
 	
 	if((bytes = write(rsockfd, "Recieved message", 17)) < 0){
 		perror("Error writing to socket");
 		close(rsockfd);
 		exit(EXIT_FAILURE);
+	}*/
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  makeReturnHeader
+ *  Description: Creates the html headers to be returned 
+ * =====================================================================================
+ */
+char* makeReturnHeader (const char* status, const char* version, int bytes ){
+	char* returnHeader;
+	if((returnHeader = (char*)malloc(250 * sizeof(char))) == NULL){
+		perror("Error allocating memory for return header");
+		return NULL;
 	}
+	returnHeader[0] = '\0';
+	sprintf(returnHeader, "%s %s Date: %s Content-Type: text/html; charset=UTF-8 Content-Length: %d Connection: close\n", version, status, "Temp", bytes);
+	return returnHeader;
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  sendFile
+ *  Description: Sends a file to the client 
+ * =====================================================================================
+ */
+int sendFile ( FILE* fptr, int sockfd ){
+	int filefd = fileno(fptr);
+	char buffer[1024];
+	int bytes = 0;
+
+	if(lseek(filefd, 0, SEEK_SET) < 0){
+		return -1;
+	}
+	do{
+		bytes = read(filefd, buffer, 1023 * sizeof(char));
+		if(bytes == 0){
+			return 0;
+		}
+		write(sockfd, buffer, bytes);
+	}while(1);
 }
