@@ -283,12 +283,11 @@ void handleRequest ( int rsockfd ){
 
 	//Read in the request
 	bzero(buffer, 1024);
-	if((bytes = read(rsockfd, buffer, 1023)) < 0){
+	if((bytes = read(rsockfd, buffer, 1023)) <= 0){
 		perror("Error reading from socket");
 		close(rsockfd);
 		exit(EXIT_FAILURE);
 	}
-
 	//Find the request type (GET, POST, ect)
 	if((bytes = sscanf(buffer, "%9s ", typeBuffer)) != 1){
 		perror("Failed to find request type");
@@ -381,7 +380,7 @@ char* makeReturnHeader (const char* status, const char* version, int bytes ){
 		return NULL;
 	}
 	returnHeader[0] = '\0';
-	sprintf(returnHeader, "%s %s Date: %s Content-Type: text/html; charset=UTF-8 Content-Length: %d Connection: close\n", version, status, "Temp", bytes);
+	sprintf(returnHeader, "%s %s\nDate: %s\nContent-Type: text/html\ncharset=UTF-8\n Content-Length: %d\nConnection: close\n\n", version, status, "Temp", bytes);
 	return returnHeader;
 }
 
