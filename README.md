@@ -11,9 +11,11 @@ no
 
 ##Compiling
 
-At the moment there is no make file, but compilation is a simple command.
+Make:
 
-Compilation:
+    make
+
+Manual Compilation:
 
     gcc -Wall -o C_Web main.c
 
