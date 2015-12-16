@@ -380,7 +380,7 @@ char* makeReturnHeader (const char* status, const char* version, int bytes ){
 		return NULL;
 	}
 	returnHeader[0] = '\0';
-	sprintf(returnHeader, "%s %s\nDate: %s\nContent-Type: text/html\ncharset=UTF-8\n Content-Length: %d\nConnection: close\n\n", version, status, "Temp", bytes);
+	sprintf(returnHeader, "%s %s\nDate: %s\nContent-Type: text/html\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", version, status, "Temp", bytes);
 	return returnHeader;
 }
 
