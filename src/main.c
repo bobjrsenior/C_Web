@@ -127,8 +127,8 @@ int main ( int argc, char *argv[] ){
 		else if(strcmp(argv[e], "-help") == 0){
 			printf("Command Options\n" \
 				"Use '-d' to run as a daemon\n" \
-				"Use '-p <number>' to specifiy a port\n" \
-				"Use 'r <dir>' to specify to www root directory\n" \
+				"Use '-p <number>' to specifiy a port (51717 is the default)\n" \
+				"Use 'r <dir>' to specify the www root directory\n" \
 				"Use '-help' to see this output\n");			
 			return EXIT_SUCCESS;
 		}//If invalid command
