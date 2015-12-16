@@ -7,7 +7,7 @@ I learned a little about sockets in one of my classes and thought making a web s
 
 ##Compiling
 
-At the moment there is no make file, but cpmpilation is a simple command.
+At the moment there is no make file, but compilation is a simple command.
 
 Compilation:
 
