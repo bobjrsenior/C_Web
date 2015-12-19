@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <ctype.h>
+#include <time.h>
 
 /* ===  Globals  ===================================================================== */
 int port = 51717; //51717 instead of 80 is for testing
@@ -404,7 +405,13 @@ char* makeReturnHeader (const char* status, const char* version, const char* mim
 	returnHeader[0] = '\0';
 	sprintf(returnHeader, "%s %s\n", version, status);
 	if(strcmp(status, "200 OK") == 0){
-		sprintf(returnHeader, "Date: %s\nContent-Type: %s\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", "temp", mimeType, bytes);
+		time_t rawTime;
+		struct tm* timeInfo;
+		char* formattedTime;
+		time(&rawTime);
+		timeInfo = localtime(&rawTime);
+		formattedTime = asctime(timeInfo);
+		sprintf(returnHeader, "Date: %sContent-Type: %s\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", formattedTime, mimeType, bytes);
 	}
 	return returnHeader;
 }
