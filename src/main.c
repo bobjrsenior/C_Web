@@ -26,6 +26,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <ctype.h>
 
 /* ===  Globals  ===================================================================== */
 int port = 51717; //51717 instead of 80 is for testing
@@ -86,7 +87,7 @@ void handleRequest ( int rsockfd );
  *  Description: Creates the html headers to be returned 
  * =====================================================================================
  */
-char* makeReturnHeader (const char* status, const char* version, int bytes );
+char* makeReturnHeader (const char* status, const char* version, const char* mimeType, int bytes );
 
 
 /* 
@@ -96,6 +97,15 @@ char* makeReturnHeader (const char* status, const char* version, int bytes );
  * =====================================================================================
  */
 int sendFile ( FILE* fptr, int sockfd );
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  getMimeType
+ *  Description: Finds the mime type needed for a certain route 
+ * =====================================================================================
+ */
+char* getMimeType ( char* path );
 
 
 /* 
@@ -148,14 +158,14 @@ int main ( int argc, char *argv[] ){
 		wwwRoot = (char*)malloc(sizeof(char) * 9);
 		strcpy(wwwRoot, "/var/www");
 		printf("%s\n", wwwRoot);
-		if(chdir(wwwRoot) < 0){
-			perror("Failed to change to root directory");
-		}
+		//if(chdir(wwwRoot) < 0){
+		//	perror("Failed to change to root directory");
+		//}
 	}
 	else{
-		if(chdir(wwwRoot) < 0){
-			perror("Failed to change to root directory");
-		}
+		//if(chdir(wwwRoot) < 0){
+		//	perror("Failed to change to root directory");
+		//}
 	}
 	initServer(argv[0]);
 	startServer();
@@ -256,8 +266,6 @@ void startServer (){
 		}
 		else if(childPid == 0){	
 			handleRequest(newsockfd);	
-			close(newsockfd);
-			exit(EXIT_SUCCESS);
 		}
 		close(newsockfd);
 	}
@@ -302,9 +310,15 @@ void handleRequest ( int rsockfd ){
 			exit(EXIT_FAILURE);
 		}
 		position += strlen(pathBuffer) + 1;
+		char* mimeType = getMimeType(pathBuffer);
+		if(mimeType == NULL){
+			close(rsockfd);
+			exit(EXIT_FAILURE);
+		}
 		char* fullPath = (char*)malloc(sizeof(char) * 250);
 		if(fullPath == NULL){
 			perror("Error allocating space");
+			free(mimeType);
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
@@ -312,12 +326,14 @@ void handleRequest ( int rsockfd ){
 		memcpy(&fullPath[strlen(wwwRoot)], &pathBuffer, sizeof(pathBuffer));
 		if((fptr = fopen(fullPath, "r")) == NULL){
 			perror("Error opening file");
+			free(mimeType);
 			close(rsockfd);
 			free(fullPath);
 			exit(EXIT_FAILURE);
 		}
 		if(fseek(fptr, 0, SEEK_END) < 0 || (fileSize = ftell(fptr)) < 0 || fseek(fptr, 0, SEEK_SET) < 0){
 			perror("Error Determining file size");
+			free(mimeType);
 			free(fullPath);
 			fclose(fptr);
 			close(rsockfd);
@@ -325,15 +341,17 @@ void handleRequest ( int rsockfd ){
 		}
 		if((bytes = sscanf(&buffer[position], "%9s", htmlVersionBuffer)) != 1){
 			perror("Error getting html version");
+			free(mimeType);
 			free(fullPath);
 			fclose(fptr);
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
 		position += strlen(htmlVersionBuffer) + 1;
-		htmlHeader = makeReturnHeader("200 OK", htmlVersionBuffer, fileSize);
+		htmlHeader = makeReturnHeader("200 OK", htmlVersionBuffer, mimeType, fileSize);
 		if(htmlHeader == NULL){
 			perror("Error creating return headers");
+			free(mimeType);
 			free(fullPath);
 			fclose(fptr);
 			close(rsockfd);
@@ -342,15 +360,19 @@ void handleRequest ( int rsockfd ){
 		write(rsockfd, htmlHeader, strlen(htmlHeader));
 		if(sendFile(fptr, rsockfd) < 0){
 			perror("Error sending file");
+			free(mimeType);
 			free(htmlHeader);
 			free(fullPath);
 			fclose(fptr);
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
+		free(mimeType);
 		free(htmlHeader);
 		free(fullPath);
 		fclose(fptr);
+		close(rsockfd);
+		exit(EXIT_SUCCESS);
 	}
 	else{
 		perror("Unknown request type");
@@ -373,14 +395,17 @@ void handleRequest ( int rsockfd ){
  *  Description: Creates the html headers to be returned 
  * =====================================================================================
  */
-char* makeReturnHeader (const char* status, const char* version, int bytes ){
+char* makeReturnHeader (const char* status, const char* version, const char* mimeType, int bytes ){
 	char* returnHeader;
 	if((returnHeader = (char*)malloc(250 * sizeof(char))) == NULL){
 		perror("Error allocating memory for return header");
 		return NULL;
 	}
 	returnHeader[0] = '\0';
-	sprintf(returnHeader, "%s %s\nDate: %s\nContent-Type: text/html\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", version, status, "Temp", bytes);
+	sprintf(returnHeader, "%s %s\n", version, status);
+	if(strcmp(status, "200 OK") == 0){
+		sprintf(returnHeader, "Date: %s\nContent-Type: %s\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", "temp", mimeType, bytes);
+	}
 	return returnHeader;
 }
 
@@ -406,4 +431,63 @@ int sendFile ( FILE* fptr, int sockfd ){
 		}
 		write(sockfd, buffer, bytes);
 	}while(1);
+}
+
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  getMimeType
+ *  Description: Finds the mime type needed for a certain route 
+ * =====================================================================================
+ */
+char* getMimeType ( char* path ){
+	FILE* fptr;
+	char extension[15];
+	char* buffer;
+	char* mime;
+	char token[48];
+	size_t pathSize = strlen(path);
+	int offset = 0;
+	if((buffer = (char*)malloc(1024 * sizeof(char))) == NULL){
+		perror("Failed allocating space");
+		return NULL;
+	}
+	if((mime = (char*)malloc(128 * sizeof(char))) == NULL){
+		perror("Failed allocating space");
+		free(buffer);
+		return NULL;
+	}
+	
+	if((fptr = fopen("mimeTypes.txt", "r")) == NULL){
+		perror("Failed opening file");
+		free(buffer);
+		free(mime);
+		return NULL;
+	}
+	pathSize = 1023;
+	if(sscanf(path, "%*[^.].%14s", extension) == 0){
+		sprintf(mime, "text/html");
+		free(buffer);
+		fclose(fptr);
+		return mime;
+	}
+	
+	int bytes;
+	while((bytes = getline(&buffer, &pathSize, fptr)) > 0 && !isspace(buffer[0])){
+		sscanf(buffer, "%127s", mime);
+		offset = strlen(mime) + 2;
+		while((sscanf(&buffer[offset], "%47s", token)) == 1){
+			offset += strlen(token) + 2;
+			if(strcmp(token, extension) == 0){
+				free(buffer);
+				fclose(fptr);
+				return mime;
+			}
+		}
+	}
+	sprintf(mime, "text/html");
+	free(buffer);
+	fclose(fptr);
+	return mime;
 }
