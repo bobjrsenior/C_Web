@@ -34,7 +34,7 @@ int port = 51717; //51717 instead of 80 is for testing
 char* wwwRoot = NULL;
 int sockfd;
 struct sockaddr_in serv_addr, cli_addr;
-
+FILE* mimefptr;
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -154,7 +154,7 @@ int main ( int argc, char *argv[] ){
 		becomeDaemon(argv[0]);
 	}
 
-	//Change roo directory
+	//Change root directory
 	if(wwwRoot == NULL){
 		wwwRoot = (char*)malloc(sizeof(char) * 9);
 		strcpy(wwwRoot, "/var/www");
@@ -169,6 +169,11 @@ int main ( int argc, char *argv[] ){
 		//}
 	}
 	initServer(argv[0]);
+	//if(chroot(wwwRoot) < 0){
+	//	perror("Error changing root directory");
+	//	exit(EXIT_FAILURE);
+	//}
+	//chdir("/");
 	startServer();
 	closeServer();
 	printf("Success\n");
@@ -215,6 +220,11 @@ void becomeDaemon (){
  * =====================================================================================
  */
 void initServer (const char* pName){
+	
+	if((mimefptr = fopen("mimeTypes.txt", "r")) == NULL){
+		perror("Failed opening mimeType file");
+		exit(EXIT_FAILURE);
+	}
 	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
 		perror("Failed to open socket");
 		exit(EXIT_FAILURE);
@@ -240,7 +250,8 @@ void initServer (const char* pName){
  * =====================================================================================
  */
 void closeServer (){
-	close(sockfd);
+	close(sockfd);	
+	fclose(mimefptr);
 }
 
 
@@ -295,12 +306,14 @@ void handleRequest ( int rsockfd ){
 	if((bytes = read(rsockfd, buffer, 1023)) <= 0){
 		perror("Error reading from socket");
 		close(rsockfd);
+		fclose(mimefptr);
 		exit(EXIT_FAILURE);
 	}
 	//Find the request type (GET, POST, ect)
 	if((bytes = sscanf(buffer, "%9s ", typeBuffer)) != 1){
 		perror("Failed to find request type");
 		close(rsockfd);
+		fclose(mimefptr);
 		exit(EXIT_FAILURE);
 	}
 	else if(strcmp(typeBuffer, "GET") == 0){
@@ -308,12 +321,20 @@ void handleRequest ( int rsockfd ){
 		if((bytes = sscanf(&buffer[position], "%127s", pathBuffer)) != 1){
 			perror("Failed to read file path");
 			close(rsockfd);
+			fclose(mimefptr);
+			exit(EXIT_FAILURE);
+		}
+		if(strstr(pathBuffer, "../") != NULL || strstr(pathBuffer, "..\\") != NULL){
+			perror("Path included ../");
+			close(rsockfd);
+			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
 		position += strlen(pathBuffer) + 1;
 		char* mimeType = getMimeType(pathBuffer);
 		if(mimeType == NULL){
 			close(rsockfd);
+			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
 		char* fullPath = (char*)malloc(sizeof(char) * 250);
@@ -321,15 +342,18 @@ void handleRequest ( int rsockfd ){
 			perror("Error allocating space");
 			free(mimeType);
 			close(rsockfd);
+			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
 		memcpy(fullPath, wwwRoot, strlen(wwwRoot));
-		memcpy(&fullPath[strlen(wwwRoot)], &pathBuffer, sizeof(pathBuffer));
+		memcpy(&fullPath[1], &pathBuffer, sizeof(pathBuffer));
+		printf("Full Path: %s\n", fullPath);
 		if((fptr = fopen(fullPath, "r")) == NULL){
 			perror("Error opening file");
 			free(mimeType);
 			close(rsockfd);
 			free(fullPath);
+			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
 		if(fseek(fptr, 0, SEEK_END) < 0 || (fileSize = ftell(fptr)) < 0 || fseek(fptr, 0, SEEK_SET) < 0){
@@ -337,6 +361,7 @@ void handleRequest ( int rsockfd ){
 			free(mimeType);
 			free(fullPath);
 			fclose(fptr);
+			fclose(mimefptr);
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
@@ -344,6 +369,7 @@ void handleRequest ( int rsockfd ){
 			perror("Error getting html version");
 			free(mimeType);
 			free(fullPath);
+			fclose(mimefptr);
 			fclose(fptr);
 			close(rsockfd);
 			exit(EXIT_FAILURE);
@@ -356,6 +382,7 @@ void handleRequest ( int rsockfd ){
 			free(fullPath);
 			fclose(fptr);
 			close(rsockfd);
+			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
 		write(rsockfd, htmlHeader, strlen(htmlHeader));
@@ -365,6 +392,7 @@ void handleRequest ( int rsockfd ){
 			free(htmlHeader);
 			free(fullPath);
 			fclose(fptr);
+			fclose(mimefptr);
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
@@ -373,11 +401,13 @@ void handleRequest ( int rsockfd ){
 		free(fullPath);
 		fclose(fptr);
 		close(rsockfd);
+		fclose(mimefptr);
 		exit(EXIT_SUCCESS);
 	}
 	else{
 		perror("Unknown request type");
 		close(rsockfd);
+		fclose(mimefptr);
 		exit(EXIT_FAILURE);
 	}
 	/*printf("%s\n", typeBuffer);
@@ -449,7 +479,6 @@ int sendFile ( FILE* fptr, int sockfd ){
  * =====================================================================================
  */
 char* getMimeType ( char* path ){
-	FILE* fptr;
 	char extension[15];
 	char* buffer;
 	char* mime;
@@ -466,8 +495,8 @@ char* getMimeType ( char* path ){
 		return NULL;
 	}
 	
-	if((fptr = fopen("mimeTypes.txt", "r")) == NULL){
-		perror("Failed opening file");
+	if(fseek(mimefptr, 0, SEEK_SET) < 0){
+		perror("Error seeking in mime file");
 		free(buffer);
 		free(mime);
 		return NULL;
@@ -476,25 +505,22 @@ char* getMimeType ( char* path ){
 	if(sscanf(path, "%*[^.].%14s", extension) == 0){
 		sprintf(mime, "text/html");
 		free(buffer);
-		fclose(fptr);
 		return mime;
 	}
 	
 	int bytes;
-	while((bytes = getline(&buffer, &pathSize, fptr)) > 0 && !isspace(buffer[0])){
+	while((bytes = getline(&buffer, &pathSize, mimefptr)) > 0 && !isspace(buffer[0])){
 		sscanf(buffer, "%127s", mime);
 		offset = strlen(mime) + 2;
 		while((sscanf(&buffer[offset], "%47s", token)) == 1){
 			offset += strlen(token) + 2;
 			if(strcmp(token, extension) == 0){
 				free(buffer);
-				fclose(fptr);
 				return mime;
 			}
 		}
 	}
 	sprintf(mime, "text/html");
 	free(buffer);
-	fclose(fptr);
 	return mime;
 }
