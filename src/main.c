@@ -295,6 +295,7 @@ void handleRequest ( int rsockfd ){
 	char typeBuffer[10];
 	char pathBuffer[128];
 	char htmlVersionBuffer[10];
+	char status[] = "404 File Not Found";
 	char* htmlHeader;
 	int bytes;
 	int position = 0;
@@ -345,16 +346,24 @@ void handleRequest ( int rsockfd ){
 			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
-		memcpy(fullPath, wwwRoot, strlen(wwwRoot));
-		memcpy(&fullPath[1], &pathBuffer, sizeof(pathBuffer));
+		//memcpy(fullPath, wwwRoot, strlen(wwwRoot));
+		//memcpy(&fullPath[strlen(wwwRoot)], &pathBuffer, sizeof(pathBuffer));
+		sprintf(fullPath, "%s%s", wwwRoot, pathBuffer);
 		printf("Full Path: %s\n", fullPath);
 		if((fptr = fopen(fullPath, "r")) == NULL){
-			perror("Error opening file");
-			free(mimeType);
-			close(rsockfd);
-			free(fullPath);
-			fclose(mimefptr);
-			exit(EXIT_FAILURE);
+			sprintf(fullPath, "%s%s", wwwRoot, "/404.html");	
+			printf("%s\n", fullPath);
+			if((fptr = fopen(fullPath, "r")) == NULL){
+				perror("Error opening file");
+				free(mimeType);
+				close(rsockfd);
+				free(fullPath);
+				fclose(mimefptr);
+				exit(EXIT_FAILURE);
+			}
+		}
+		else{
+			sprintf(status, "%s", "200 OK");
 		}
 		if(fseek(fptr, 0, SEEK_END) < 0 || (fileSize = ftell(fptr)) < 0 || fseek(fptr, 0, SEEK_SET) < 0){
 			perror("Error Determining file size");
@@ -375,7 +384,7 @@ void handleRequest ( int rsockfd ){
 			exit(EXIT_FAILURE);
 		}
 		position += strlen(htmlVersionBuffer) + 1;
-		htmlHeader = makeReturnHeader("200 OK", htmlVersionBuffer, mimeType, fileSize);
+		htmlHeader = makeReturnHeader(status, htmlVersionBuffer, mimeType, fileSize);
 		if(htmlHeader == NULL){
 			perror("Error creating return headers");
 			free(mimeType);
@@ -428,21 +437,19 @@ void handleRequest ( int rsockfd ){
  */
 char* makeReturnHeader (const char* status, const char* version, const char* mimeType, int bytes ){
 	char* returnHeader;
+	time_t rawTime;
+	struct tm* timeInfo;
+	char* formattedTime;
 	if((returnHeader = (char*)malloc(250 * sizeof(char))) == NULL){
 		perror("Error allocating memory for return header");
 		return NULL;
 	}
 	returnHeader[0] = '\0';
-	sprintf(returnHeader, "%s %s\n", version, status);
-	if(strcmp(status, "200 OK") == 0){
-		time_t rawTime;
-		struct tm* timeInfo;
-		char* formattedTime;
-		time(&rawTime);
-		timeInfo = localtime(&rawTime);
-		formattedTime = asctime(timeInfo);
-		sprintf(returnHeader, "Date: %sContent-Type: %s\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", formattedTime, mimeType, bytes);
-	}
+	time(&rawTime);
+	timeInfo = localtime(&rawTime);
+	formattedTime = asctime(timeInfo);
+	sprintf(returnHeader, "%s %s\nDate: %sContent-Type: %s\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", version, status, formattedTime, mimeType, bytes);
+
 	return returnHeader;
 }
 
