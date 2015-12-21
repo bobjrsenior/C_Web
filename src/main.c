@@ -30,11 +30,21 @@
 #include <time.h>
 
 /* ===  Globals  ===================================================================== */
+int volatile run = 1;
 int port = 51717; //51717 instead of 80 is for testing
 char* wwwRoot = NULL;
 int sockfd;
 struct sockaddr_in serv_addr, cli_addr;
 FILE* mimefptr;
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  intHandler
+ *  Description: Handles sigINT (ctrl-c) 
+ * =====================================================================================
+ */
+void intHandler ( int signal );
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -117,9 +127,17 @@ char* getMimeType ( char* path );
  */
 int main ( int argc, char *argv[] ){
 	int isDaemon = 0;
-
-	//Cycle through passed command options
 	int e;
+
+	//Set up intHander (ctrl-c)
+	//Jusgt signal isn't used because it doesn't interrupt accept (restarts it instead)
+	struct sigaction a;
+	a.sa_handler = intHandler;
+	a.sa_flags = 0;
+	sigemptyset( &a.sa_mask );
+	sigaction( SIGINT, &a, NULL );
+	
+	//Cycle through passed command options
 	for(e = 1; e < argc; ++e){
 		//'-d' is to make the program a daemon
 		if(strcmp(argv[e], "-d") == 0){
@@ -265,21 +283,24 @@ void startServer (){
 	int newsockfd;
 	socklen_t clilen;
 	pid_t childPid;
-	while(1){
+	while(run){
 		clilen = sizeof(cli_addr);
 		newsockfd = accept(sockfd, (struct sockaddr*) &cli_addr, &clilen);
 		if(newsockfd < 0){
 			perror("Failed to accept client");
+			return;
 		}
-		childPid = fork();
-		if(childPid < 0){
-			perror("Failed to fork process to handle request");
-			continue;
+		else{
+			childPid = fork();
+			if(childPid < 0){
+				perror("Failed to fork process to handle request");
+				continue;
+			}
+			else if(childPid == 0){	
+				handleRequest(newsockfd);	
+			}
+			close(newsockfd);
 		}
-		else if(childPid == 0){	
-			handleRequest(newsockfd);	
-		}
-		close(newsockfd);
 	}
 }
 
@@ -354,7 +375,12 @@ void handleRequest ( int rsockfd ){
 			exit(EXIT_FAILURE);
 		}
 		//Fullpath = wwwRoot + requested path
-		sprintf(fullPath, "%s%s", wwwRoot, pathBuffer);
+		if(pathBuffer[0] == '/'){
+			sprintf(fullPath, "%s%s", wwwRoot, pathBuffer);
+		}
+		else{
+			sprintf(fullPath, "%s/%s", wwwRoot, pathBuffer);
+		}
 		printf("Full Path: %s\n", fullPath);
 		//Try to open requested file
 		if((fptr = fopen(fullPath, "r")) == NULL){
@@ -559,4 +585,15 @@ char* getMimeType ( char* path ){
 	sprintf(mime, "text/html");
 	free(buffer);
 	return mime;
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  intHandler
+ *  Description: Handles sigINT (ctrl-c) 
+ * =====================================================================================
+ */
+void intHandler ( int signal ){
+	run = 0;	
 }
