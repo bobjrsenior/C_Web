@@ -316,28 +316,35 @@ void handleRequest ( int rsockfd ){
 		close(rsockfd);
 		fclose(mimefptr);
 		exit(EXIT_FAILURE);
-	}
+	}//If it is a GET request
 	else if(strcmp(typeBuffer, "GET") == 0){
+		//Offset to after GET in the request
 		position += strlen(typeBuffer) + 1;
+		//Read in the file path requested
 		if((bytes = sscanf(&buffer[position], "%127s", pathBuffer)) != 1){
 			perror("Failed to read file path");
 			close(rsockfd);
 			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
+		//Check for relative pathing
 		if(strstr(pathBuffer, "../") != NULL || strstr(pathBuffer, "..\\") != NULL){
 			perror("Path included ../");
 			close(rsockfd);
 			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
+		//Offset to after the file path
 		position += strlen(pathBuffer) + 1;
+		//Get the mime type based on what was requested
 		char* mimeType = getMimeType(pathBuffer);
+		//Error checking
 		if(mimeType == NULL){
 			close(rsockfd);
 			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
+		//Create the full path where the file will be found
 		char* fullPath = (char*)malloc(sizeof(char) * 250);
 		if(fullPath == NULL){
 			perror("Error allocating space");
@@ -346,11 +353,12 @@ void handleRequest ( int rsockfd ){
 			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
-		//memcpy(fullPath, wwwRoot, strlen(wwwRoot));
-		//memcpy(&fullPath[strlen(wwwRoot)], &pathBuffer, sizeof(pathBuffer));
+		//Fullpath = wwwRoot + requested path
 		sprintf(fullPath, "%s%s", wwwRoot, pathBuffer);
 		printf("Full Path: %s\n", fullPath);
+		//Try to open requested file
 		if((fptr = fopen(fullPath, "r")) == NULL){
+			//If can't open, try and open 404.html instead
 			sprintf(fullPath, "%s%s", wwwRoot, "/404.html");	
 			printf("%s\n", fullPath);
 			if((fptr = fopen(fullPath, "r")) == NULL){
@@ -361,10 +369,11 @@ void handleRequest ( int rsockfd ){
 				fclose(mimefptr);
 				exit(EXIT_FAILURE);
 			}
-		}
+		}//If opened file correctly, set status to OK
 		else{
 			sprintf(status, "%s", "200 OK");
 		}
+		//Get file size and make sure to point at beginning of file
 		if(fseek(fptr, 0, SEEK_END) < 0 || (fileSize = ftell(fptr)) < 0 || fseek(fptr, 0, SEEK_SET) < 0){
 			perror("Error Determining file size");
 			free(mimeType);
@@ -374,6 +383,7 @@ void handleRequest ( int rsockfd ){
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
+		//Find the html version from the request
 		if((bytes = sscanf(&buffer[position], "%9s", htmlVersionBuffer)) != 1){
 			perror("Error getting html version");
 			free(mimeType);
@@ -383,8 +393,11 @@ void handleRequest ( int rsockfd ){
 			close(rsockfd);
 			exit(EXIT_FAILURE);
 		}
+		//Offset to after the html version in request
 		position += strlen(htmlVersionBuffer) + 1;
+		//Get the return headers
 		htmlHeader = makeReturnHeader(status, htmlVersionBuffer, mimeType, fileSize);
+		//Error check
 		if(htmlHeader == NULL){
 			perror("Error creating return headers");
 			free(mimeType);
@@ -394,9 +407,10 @@ void handleRequest ( int rsockfd ){
 			fclose(mimefptr);
 			exit(EXIT_FAILURE);
 		}
+		//Send the return headers
 		write(rsockfd, htmlHeader, strlen(htmlHeader));
+		//Send requested file
 		if(sendFile(fptr, rsockfd) < 0){
-			perror("Error sending file");
 			free(mimeType);
 			free(htmlHeader);
 			free(fullPath);
@@ -412,20 +426,13 @@ void handleRequest ( int rsockfd ){
 		close(rsockfd);
 		fclose(mimefptr);
 		exit(EXIT_SUCCESS);
-	}
+	}//If type not supported (not GET request)
 	else{
 		perror("Unknown request type");
 		close(rsockfd);
 		fclose(mimefptr);
 		exit(EXIT_FAILURE);
 	}
-	/*printf("%s\n", typeBuffer);
-	
-	if((bytes = write(rsockfd, "Recieved message", 17)) < 0){
-		perror("Error writing to socket");
-		close(rsockfd);
-		exit(EXIT_FAILURE);
-	}*/
 }
 
 
@@ -440,14 +447,17 @@ char* makeReturnHeader (const char* status, const char* version, const char* mim
 	time_t rawTime;
 	struct tm* timeInfo;
 	char* formattedTime;
+	//Create return header
 	if((returnHeader = (char*)malloc(250 * sizeof(char))) == NULL){
 		perror("Error allocating memory for return header");
 		return NULL;
 	}
 	returnHeader[0] = '\0';
+	//Find current time
 	time(&rawTime);
 	timeInfo = localtime(&rawTime);
 	formattedTime = asctime(timeInfo);
+	//Generate the header and return it
 	sprintf(returnHeader, "%s %s\nDate: %sContent-Type: %s\ncharset=UTF-8\nContent-Length: %d\nConnection: close\n\n", version, status, formattedTime, mimeType, bytes);
 
 	return returnHeader;
@@ -462,18 +472,29 @@ char* makeReturnHeader (const char* status, const char* version, const char* mim
  */
 int sendFile ( FILE* fptr, int sockfd ){
 	int filefd = fileno(fptr);
-	char buffer[1024];
+	int buffSize = 1024;
+	char buffer[buffSize];
 	int bytes = 0;
-
+	//Make sure you are at the start of the file
 	if(lseek(filefd, 0, SEEK_SET) < 0){
 		return -1;
 	}
 	do{
-		bytes = read(filefd, buffer, 1023 * sizeof(char));
+		//Readbytes in from the file
+		bytes = read(filefd, buffer, (buffSize - 1) * sizeof(char));
+		//If at end of file, return
 		if(bytes == 0){
 			return 0;
+		}//Error check
+		else if(bytes < 0){
+			perror("Error reding from file");
+			return -1;
 		}
-		write(sockfd, buffer, bytes);
+		//Write the read bytes to client
+		if(write(sockfd, buffer, bytes) < 0){
+			perror("Error writing to socket");
+			return -1;
+		}
 	}while(1);
 }
 
@@ -490,43 +511,51 @@ char* getMimeType ( char* path ){
 	char* buffer;
 	char* mime;
 	char token[48];
-	size_t pathSize = strlen(path);
+	size_t pathSize = 1024; 
 	int offset = 0;
-	if((buffer = (char*)malloc(1024 * sizeof(char))) == NULL){
+	int bytes;
+	//Create buffer for mime file
+	if((buffer = (char*)malloc(pathSize * sizeof(char))) == NULL){
 		perror("Failed allocating space");
 		return NULL;
 	}
+	//Create buffer to hold mime type
 	if((mime = (char*)malloc(128 * sizeof(char))) == NULL){
 		perror("Failed allocating space");
 		free(buffer);
 		return NULL;
 	}
-	
+	//Make sure you are at the begnning of the file
 	if(fseek(mimefptr, 0, SEEK_SET) < 0){
 		perror("Error seeking in mime file");
 		free(buffer);
 		free(mime);
 		return NULL;
 	}
-	pathSize = 1023;
+	
 	if(sscanf(path, "%*[^.].%14s", extension) == 0){
+		//No extension (defaulted to 'text/html'
 		sprintf(mime, "text/html");
 		free(buffer);
 		return mime;
 	}
-	
-	int bytes;
+	--pathSize;
+	//Read in a line from mime types file
 	while((bytes = getline(&buffer, &pathSize, mimefptr)) > 0 && !isspace(buffer[0])){
+		//Get the current mime and offset away from it
 		sscanf(buffer, "%127s", mime);
 		offset = strlen(mime) + 2;
+		//Read a file extension for the mime until none are left
 		while((sscanf(&buffer[offset], "%47s", token)) == 1){
 			offset += strlen(token) + 2;
+			//If the exention is the same as requester, return the mime
 			if(strcmp(token, extension) == 0){
 				free(buffer);
 				return mime;
 			}
 		}
 	}
+	//mime not found (defaulted to 'text/html'
 	sprintf(mime, "text/html");
 	free(buffer);
 	return mime;
